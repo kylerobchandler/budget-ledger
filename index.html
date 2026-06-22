@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Budget Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #FAF6EE;
+    --paper-line: #DDD4C2;
+    --ink: #2B2622;
+    --ink-soft: #6b6258;
+    --ok: #3F6F52;
+    --warn: #B8862E;
+    --over: #A4402F;
+    --gold: #C9A227;
+  }
+
+  * { box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 39px,
+        var(--paper-line) 39px,
+        var(--paper-line) 40px
+      ),
+      var(--paper);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    padding: 32px 20px 80px;
+  }
+
+  .sheet{
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  header{
+    display:flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 18px;
+    margin-bottom: 28px;
+  }
+
+  h1{
+    font-family: 'Fraunces', serif;
+    font-optical-sizing: auto;
+    font-weight: 600;
+    font-size: 2.1rem;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .period-stamp{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border: 1px solid var(--ink);
+    padding: 6px 10px;
+    transform: rotate(-1.2deg);
+    white-space: nowrap;
+    color: var(--ink-soft);
+  }
+
+  .totals-row{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 36px;
+  }
+
+  .totals-row .label{
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .totals-row .value{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.6rem;
+    font-weight: 600;
+  }
+
+  .category{
+    padding: 18px 0;
+    border-bottom: 1px solid var(--paper-line);
+  }
+
+  .category-top{
+    display:flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+    gap: 12px;
+  }
+
+  .category-name{
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 1.15rem;
+  }
+
+  .category-numbers{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.95rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .category-numbers .remaining{
+    font-weight: 600;
+    font-size: 1.05rem;
+  }
+
+  .category-numbers .of-limit{
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+  }
+
+  .tally{
+    position: relative;
+    height: 10px;
+    background: rgba(0,0,0,0.06);
+    border: 1px solid var(--ink);
+  }
+
+  .tally-fill{
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 0%;
+    background: var(--ok);
+    transition: width 0.6s cubic-bezier(.4,0,.2,1), background-color 0.4s ease;
+  }
+
+  .tally[data-state="warn"] .tally-fill{ background: var(--warn); }
+  .tally[data-state="over"] .tally-fill{
+    background: var(--over);
+    background-image: repeating-linear-gradient(
+      135deg, rgba(255,255,255,0.25) 0 3px, transparent 3px 7px
+    );
+  }
+
+  .tally-tick{
+    position: absolute;
+    top: -1px; bottom: -1px;
+    width: 1px;
+    background: var(--paper);
+    opacity: 0.7;
+  }
+
+  .empty, .error{
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+    padding: 40px 0;
+    text-align: center;
+    border: 1px dashed var(--paper-line);
+  }
+
+  .error{ color: var(--over); border-color: var(--over); }
+
+  footer{
+    margin-top: 36px;
+    font-size: 0.72rem;
+    color: var(--ink-soft);
+    text-align: center;
+    letter-spacing: 0.04em;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .tally-fill{ transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+  <header>
+    <h1>Budget Ledger</h1>
+    <div class="period-stamp" id="periodStamp">loading period&hellip;</div>
+  </header>
+
+  <div class="totals-row">
+    <span class="label">Total remaining</span>
+    <span class="value" id="totalRemaining">&mdash;</span>
+  </div>
+
+  <div id="categories">
+    <div class="empty">Connecting to ledger&hellip;</div>
+  </div>
+
+  <footer>Updates live &mdash; deductions post automatically from the budget form.</footer>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+  // ---- REPLACE WITH YOUR FIREBASE WEB APP CONFIG ----
+  const firebaseConfig = {
+    apiKey: "AIzaSyBnLGEF4_zrkFRVSCVVj9ZEKHxwIVaKRcA",
+    authDomain: "budget-ledger-7f27d.firebaseapp.com",
+    databaseURL: "https://budget-ledger-7f27d-default-rtdb.firebaseio.com",
+    projectId: "budget-ledger-7f27d"
+  };
+  // ----------------------------------------------------
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+
+  const categoriesEl = document.getElementById('categories');
+  const totalEl = document.getElementById('totalRemaining');
+  const periodEl = document.getElementById('periodStamp');
+
+  const money = (n) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  function formatDate(iso){
+    if(!iso) return null;
+    const d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  onValue(ref(db, 'payPeriod'), (snap) => {
+    const p = snap.val();
+    if (p && p.start && p.end) {
+      periodEl.textContent = `${formatDate(p.start)} – ${formatDate(p.end)}`;
+    } else {
+      periodEl.textContent = 'pay period not set';
+    }
+  }, (err) => {
+    periodEl.textContent = 'connection error';
+  });
+
+  onValue(ref(db, 'budgets'), (snapshot) => {
+    const data = snapshot.val();
+
+    if (!data) {
+      categoriesEl.innerHTML = `<div class="empty">No categories yet. Add some under "budgets" in the Firebase console to get started.</div>`;
+      totalEl.textContent = money(0);
+      return;
+    }
+
+    const entries = Object.entries(data).sort((a, b) => {
+      const orderA = a[1].order ?? 999;
+      const orderB = b[1].order ?? 999;
+      if (orderA !== orderB) return orderA - orderB;
+      return a[0].localeCompare(b[0]);
+    });
+
+    let totalRemaining = 0;
+    categoriesEl.innerHTML = '';
+
+    entries.forEach(([name, cat]) => {
+      const limit = Number(cat.limit) || 0;
+      const spent = Number(cat.spent) || 0;
+      const remaining = limit - spent;
+      totalRemaining += remaining;
+
+      const pctRemaining = limit > 0 ? (remaining / limit) * 100 : 0;
+      const pctSpent = limit > 0 ? Math.min(Math.max((spent / limit) * 100, 0), 100) : 0;
+
+      let state = 'ok';
+      if (remaining < 0) state = 'over';
+      else if (pctRemaining <= 20) state = 'over';
+      else if (pctRemaining <= 45) state = 'warn';
+
+      const row = document.createElement('div');
+      row.className = 'category';
+      row.innerHTML = `
+        <div class="category-top">
+          <span class="category-name">${name}</span>
+          <span class="category-numbers">
+            <span class="remaining">${money(remaining)}</span>
+            <span class="of-limit"> left of ${money(limit)}</span>
+          </span>
+        </div>
+        <div class="tally" data-state="${state}">
+          <div class="tally-fill" style="width:${pctSpent}%"></div>
+          <div class="tally-tick" style="left:25%"></div>
+          <div class="tally-tick" style="left:50%"></div>
+          <div class="tally-tick" style="left:75%"></div>
+        </div>
+      `;
+      categoriesEl.appendChild(row);
+    });
+
+    totalEl.textContent = money(totalRemaining);
+    totalEl.style.color = totalRemaining < 0 ? 'var(--over)' : 'var(--ink)';
+  }, (err) => {
+    categoriesEl.innerHTML = `<div class="error">Couldn't load the ledger. Check your Firebase config and database rules.</div>`;
+  });
+</script>
+
+</body>
+</html>
