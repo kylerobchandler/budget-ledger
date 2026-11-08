@@ -441,5 +441,134 @@
   });
 </script>
 
+<!-- ===== Add Transaction button — paste this right above </body> in index.html ===== -->
+<style>
+  .add-tx-btn{
+    position: fixed; right: 20px; bottom: 20px; z-index: 50;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.95rem;
+    padding: 14px 20px; border: none; border-radius: 999px;
+    background: var(--ink, #222); color: var(--paper, #fff);
+    box-shadow: 0 4px 14px rgba(0,0,0,.2); cursor: pointer;
+  }
+  .add-tx-dialog{
+    border: 1px solid var(--paper-line, #ccc); border-radius: 12px;
+    padding: 22px; width: min(92vw, 380px);
+    background: var(--paper, #fff); color: var(--ink, #222);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .add-tx-dialog::backdrop{ background: rgba(0,0,0,.35); }
+  .add-tx-dialog h2{ margin: 0 0 16px; font-size: 1.1rem; }
+  .add-tx-dialog label{ display: block; font-size: 0.75rem; margin: 12px 0 4px;
+    color: var(--ink-soft, #666); text-transform: uppercase; letter-spacing: .05em; }
+  .add-tx-dialog input, .add-tx-dialog select{
+    width: 100%; box-sizing: border-box; padding: 10px; font: inherit; font-size: 1rem;
+    border: 1px solid var(--paper-line, #ccc); border-radius: 6px;
+    background: transparent; color: inherit;
+  }
+  .add-tx-actions{ display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .add-tx-actions button{ font: inherit; padding: 10px 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--paper-line, #ccc); background: transparent; color: inherit; }
+  .add-tx-actions button[type=submit]{ background: var(--ink, #222); color: var(--paper, #fff); border-color: transparent; }
+  .add-tx-msg{ min-height: 1.2em; margin-top: 10px; font-size: 0.85rem; color: var(--over, #c0392b); }
+</style>
+
+<button class="add-tx-btn" id="addTxBtn" type="button">+ Add transaction</button>
+
+<dialog class="add-tx-dialog" id="addTxDialog">
+  <form id="addTxForm">
+    <h2>Add transaction</h2>
+    <label for="txCategory">Category</label>
+    <select id="txCategory" required></select>
+    <label for="txAmount">Amount ($)</label>
+    <input id="txAmount" type="number" inputmode="decimal" step="0.01" min="0.01" required>
+    <label for="txDate">Date</label>
+    <input id="txDate" type="date" required>
+    <label for="txReason">What was it for? (optional)</label>
+    <input id="txReason" type="text" maxlength="80">
+    <div class="add-tx-msg" id="txMsg"></div>
+    <div class="add-tx-actions">
+      <button type="button" id="txCancel">Cancel</button>
+      <button type="submit" id="txSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function(){
+  // ---- Your settings ----
+  var DB_URL    = 'https://budget-ledger-7f27d-default-rtdb.firebaseio.com';
+  var DB_SECRET = 'YOUR_DATABASE_SECRET';   // same secret as in your Apps Script
+
+  var btn = document.getElementById('addTxBtn');
+  var dlg = document.getElementById('addTxDialog');
+  var form = document.getElementById('addTxForm');
+  var catSel = document.getElementById('txCategory');
+  var amt = document.getElementById('txAmount');
+  var dateIn = document.getElementById('txDate');
+  var reason = document.getElementById('txReason');
+  var msg = document.getElementById('txMsg');
+  var save = document.getElementById('txSave');
+
+  function today(){
+    var d = new Date(), p = function(n){ return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+  function path(name){ return name.split('/').map(encodeURIComponent).join('/'); }
+
+  // Fill the category dropdown from Firebase, in the same order as the page
+  function loadCategories(){
+    return fetch(DB_URL + '/budgets.json').then(function(r){ return r.json(); }).then(function(data){
+      var keep = catSel.value;
+      catSel.innerHTML = '';
+      Object.keys(data || {})
+        .sort(function(a, b){
+          var oa = (data[a] && data[a].order) || 999, ob = (data[b] && data[b].order) || 999;
+          return oa !== ob ? oa - ob : a.localeCompare(b);
+        })
+        .forEach(function(name){
+          var o = document.createElement('option'); o.value = o.textContent = name; catSel.appendChild(o);
+        });
+      if (keep) catSel.value = keep;
+    });
+  }
+
+  btn.addEventListener('click', function(){
+    msg.textContent = '';
+    form.reset();
+    dateIn.value = today();
+    loadCategories().catch(function(){ msg.textContent = 'Could not load categories.'; });
+    dlg.showModal();
+    amt.focus();
+  });
+  document.getElementById('txCancel').addEventListener('click', function(){ dlg.close(); });
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var amount = Math.round(parseFloat(amt.value) * 100) / 100;
+    if (!catSel.value || !(amount > 0)) { msg.textContent = 'Pick a category and enter an amount.'; return; }
+
+    save.disabled = true; msg.textContent = '';
+    var txKey = 'tx' + Date.now() + Math.random().toString(36).slice(2, 6);
+    var update = {
+      spent: { '.sv': { increment: amount } },   // adds safely, even if two people save at once
+    };
+    update['transactions/' + txKey] = { date: dateIn.value, amount: amount, reason: reason.value.trim() };
+
+    fetch(DB_URL + '/budgets/' + path(catSel.value) + '.json?auth=' + encodeURIComponent(DB_SECRET), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update)
+    }).then(function(r){
+      if (!r.ok) throw new Error(r.status);
+      dlg.close();   // the page updates by itself within a second or two
+    }).catch(function(err){
+      msg.textContent = err.message === '401' ? 'Secret key is wrong — check DB_SECRET.' : 'Save failed. Try again.';
+    }).finally(function(){ save.disabled = false; });
+  });
+})();
+</script>
+<!-- ===== end Add Transaction ===== -->
+
+  
 </body>
 </html>
